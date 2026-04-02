@@ -1,52 +1,72 @@
-import { cp, mkdir, readdir } from 'node:fs/promises';
+import { cp, mkdir, readdir, stat } from 'node:fs/promises';
 import { loadEnvFile } from 'node:process';
 
 loadEnvFile('.env.local');
 
 const screenshots = await readdir(process.env.SSDIR);
+const outputDir = process.env.OSSDIR;
 
-const charName = process.env.CHARNAME;
-const charDir = `${process.env.OSSDIR}/${charName}`
+const getEventsByChar = (screenshots) => {
+  let events = screenshots.reduce((acc, memo) => {
+    let eventFile = memo.split('_')[memo.split('_').length - 1];
+    let event = eventFile.slice(0, eventFile.length - 4);
+    let char = memo.split('_')[2];
 
-let charScreenshots = screenshots.filter((file) => file.includes(charName));
-
-const getCharEvents = (charScreenshots) => {
-  let events = charScreenshots.reduce((acc, memo) => {
-    let eventFile = memo.split('_')[memo.split('_').length-1];
-    let event = eventFile.slice(0, eventFile.length-4);
-    if (!acc.includes(event)) {
-      acc.push(event);
+    if (!Object.keys(acc).includes(char)) {
+      acc[char] = [];
     }
+
+    if (!acc[char].includes(event)) {
+      acc[char].push(event);
+    }
+
     return acc;
-    
-  }, []);
+  }, {});
 
   return events;
 };
 
-
-const makeCharEventsDirectories = async (charEvents) => {
-  await mkdir(charDir);
-  charEvents.forEach(async (event) => {
-    try {
-      await mkdir(`${charDir}/${event}`);
-    } catch (e) {
-      console.log(e);
+const checkAndMakeDirectory = async (dir) => {
+  try {
+    await stat(dir);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      try {
+        await mkdir(dir);
+      } catch (err) {
+        console.error(err.message);
+      }
     }
-  });  
+  }
 };
 
-const copySS = async (charScreenshots, charEvents) => {
-  charEvents.forEach((event) => {
-    charScreenshots.forEach(async (ss) => {
-      if (ss.includes(event)) {
-        await cp(`${process.env.SSDIR}/${ss}`, `${charDir}/${event}/${ss}`);
+const makeCharEventsDirectories = async (eventsByChar) => {
+  Object.keys(eventsByChar).forEach(async (char) => {
+    await checkAndMakeDirectory(`${outputDir}/${char}`);
+    eventsByChar[char].forEach(async (event) => {
+      try {
+        await checkAndMakeDirectory(`${outputDir}/${char}/${event}`);
+      } catch (e) {
+        console.log(e);
       }
     });
   });
 };
 
-let charEvents = getCharEvents(charScreenshots);
-await makeCharEventsDirectories(charEvents);
-await copySS(charScreenshots, charEvents);
+const copyScreenshots = async (screenshots, eventsByChar) => {
+  screenshots.forEach((ss) => {
+    let char = ss.split('_')[2];
+    eventsByChar[char].forEach(async (event) => {
+      if (ss.includes(char) && ss.includes(event)) {
+        await cp(
+          `${process.env.SSDIR}/${ss}`,
+          `${outputDir}/${char}/${event}/${ss}`,
+        );
+      }
+    });
+  });
+};
 
+const eventsByChar = getEventsByChar(screenshots);
+await makeCharEventsDirectories(eventsByChar);
+await copyScreenshots(screenshots, eventsByChar);
