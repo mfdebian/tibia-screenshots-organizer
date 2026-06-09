@@ -1,10 +1,11 @@
-import { cp, mkdir, readdir, stat } from 'node:fs/promises';
+import { cp as copy, mkdir, readdir, stat } from 'node:fs/promises';
 import { loadEnvFile } from 'node:process';
 
 loadEnvFile('.env.local');
 
 const screenshots = await readdir(process.env.SSDIR);
 const outputDir = process.env.OSSDIR;
+const _ = undefined;
 
 const getEventsByChar = (screenshots) => {
   let events = screenshots.reduce((acc, memo) => {
@@ -26,26 +27,24 @@ const getEventsByChar = (screenshots) => {
   return events;
 };
 
-const checkAndMakeDirectory = async (dir) => {
+const createDirOrFileIfNonExistent = async (from, to) => {
   try {
-    await stat(dir);
+    from
+      ? await copy(from, to, { errorOnExist: true, force: false })
+      : await mkdir(to, { recursive: true });
   } catch (error) {
-    if (error.code === 'ENOENT') {
-      try {
-        await mkdir(dir);
-      } catch (err) {
-        console.error(err.message);
-      }
+    if (error.code !== 'ERR_FS_CP_EEXIST') {
+      console.log(error.code);
     }
   }
 };
 
 const makeCharEventsDirectories = async (eventsByChar) => {
   Object.keys(eventsByChar).forEach(async (char) => {
-    await checkAndMakeDirectory(`${outputDir}/${char}`);
+    await createDirOrFileIfNonExistent(_, `${outputDir}/${char}`);
     eventsByChar[char].forEach(async (event) => {
       try {
-        await checkAndMakeDirectory(`${outputDir}/${char}/${event}`);
+        await createDirOrFileIfNonExistent(_, `${outputDir}/${char}/${event}`);
       } catch (e) {
         console.log(e);
       }
@@ -58,7 +57,7 @@ const copyScreenshots = async (screenshots, eventsByChar) => {
     let char = ss.split('_')[2];
     eventsByChar[char].forEach(async (event) => {
       if (ss.includes(char) && ss.includes(event)) {
-        await cp(
+        await createDirOrFileIfNonExistent(
           `${process.env.SSDIR}/${ss}`,
           `${outputDir}/${char}/${event}/${ss}`,
         );
